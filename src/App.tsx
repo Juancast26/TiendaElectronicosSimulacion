@@ -119,7 +119,7 @@ function App() {
     setRunning(false);
   };
 
-  // Datos gráficos
+ 
   const dataUsuarios = {
     labels: labelsUsuarios,
     datasets: [
