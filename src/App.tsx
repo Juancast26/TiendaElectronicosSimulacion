@@ -1,155 +1,257 @@
-import { useMemo, useState } from "react";
-import { fakerES as faker } from "@faker-js/faker"; // Faker en español
-import type { Product, Order } from "./types";
-import { fakePurchase, runWithConcurrency } from "./simulate";
+import { useState } from "react";
+import "./App.css";
+import { runWithConcurrency, fakePurchase } from "./simulate";
 
-export default function App() {
-  const [pedidosCount, setPedidosCount] = useState(500);
-  const [concurrencia, setConcurrencia] = useState(20);
-  const [procesando, setProcesando] = useState(false);
-  const [pedidos, setPedidos] = useState<Order[]>([]);
-  const [errores, setErrores] = useState<number>(0);
-  const [duracionMs, setDuracionMs] = useState<number | null>(null);
+import { fakeUser } from "./simulateUsers";
 
-  // Catálogo de electrónicos en español
-  const productos: Product[] = useMemo(() => {
-    const catalogo = [
-      "Teléfono inteligente",
-      "Computador portátil",
-      "Audífonos inalámbricos",
-      "Televisor LED 55''",
-      "Consola de videojuegos",
-      "Tablet Android",
-      "Cámara digital",
-      "Smartwatch",
-      "Barra de sonido",
-      "Disco duro externo"
-    ];
 
-    return catalogo.map(nombre => ({
-      id: faker.string.uuid(),
-      name: nombre,
-      price: faker.number.int({ min: 150000, max: 5000000 }) // precios en COP
-    }));
-  }, []);
+// Chart.js
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+} from "chart.js";
+import { Bar } from "react-chartjs-2";
 
-  // Generación de pedidos
-  const tareas = useMemo(() => {
-    return new Array(pedidosCount).fill(0).map(() => {
-      const producto = productos[Math.floor(Math.random() * productos.length)];
-      const pedido: Order = {
-        id: faker.string.uuid(),
-        productId: producto.id,
-        productName: producto.name,
-        price: producto.price,
-        createdAt: new Date().toISOString(),
-      };
-      return async () => {
-        const res = await fakePurchase(pedido);
-        return res.data as Order;
-      };
-    });
-  }, [pedidosCount, productos]);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-  // Ejecutar simulación
-  async function run() {
-    setProcesando(true);
-    setErrores(0);
-    setPedidos([]);
-    setDuracionMs(null);
-    const inicio = performance.now();
-    try {
-      const resultados = await runWithConcurrency(
-        tareas.map(fn => async () => {
-          try {
-            return await fn();
-          } catch {
-            setErrores(prev => prev + 1);
-            return null;
-          }
-        }),
-        concurrencia
-      );
-      const ok = resultados.filter(Boolean) as Order[];
-      setPedidos(ok);
-    } finally {
-      const fin = performance.now();
-      setDuracionMs(Math.round(fin - inicio));
-      setProcesando(false);
+function App() {
+  const [mode, setMode] = useState<"usuarios" | "pedidos">("usuarios");
+
+  // --- Estado usuarios ---
+  const [cantidad, setCantidad] = useState<string>("");
+  const [usuarios, setUsuarios] = useState(0);
+  const [errorUsuarios, setErrorUsuarios] = useState(0);
+  const [tiempoUsuarios, setTiempoUsuarios] = useState(0);
+  const [labelsUsuarios, setLabelsUsuarios] = useState<string[]>([]);
+  const [chartUsuarios, setChartUsuarios] = useState<number[]>([]);
+
+  // --- Estado pedidos ---
+  const [numPedidos, setNumPedidos] = useState<string>("");
+  const [concurrency, setConcurrency] = useState<string>("");
+  const [successCount, setSuccessCount] = useState(0);
+  const [errorCount, setErrorCount] = useState(0);
+  const [tiempoPedidos, setTiempoPedidos] = useState(0);
+  const [labelsPedidos, setLabelsPedidos] = useState<string[]>([]);
+  const [chartPedidos, setChartPedidos] = useState<number[]>([]);
+
+  const [running, setRunning] = useState(false);
+
+  // 🔹 Simular usuarios masivos
+  const simulateUsers = async () => {
+    const total = parseInt(cantidad);
+    if (!total || total <= 0) {
+      alert("Ingrese un número válido de usuarios");
+      return;
     }
-  }
 
-  const throughput = duracionMs
-    ? (pedidos.length / (duracionMs / 1000)).toFixed(1)
-    : "-";
+    setRunning(true);
+    setUsuarios(0);
+    setErrorUsuarios(0);
+    setTiempoUsuarios(0);
+    setLabelsUsuarios([]);
+    setChartUsuarios([]);
+
+    const start = performance.now();
+
+    for (let i = 1; i <= total; i++) {
+      try {
+        await fakeUser(i); // ahora con latencia + CPU + error random
+        setUsuarios((prev) => prev + 1);
+        setLabelsUsuarios((prev) => [...prev, `OK #${i}`]);
+        setChartUsuarios((prev) => [...prev, 1]);
+      } catch {
+        setErrorUsuarios((prev) => prev + 1);
+        setLabelsUsuarios((prev) => [...prev, `Error #${i}`]);
+        setChartUsuarios((prev) => [...prev, 0]);
+      }
+
+      // micro pausa cada cierto número para simular progresión
+      if (i % 200 === 0) {
+        await new Promise((res) => setTimeout(res, 1));
+      }
+    }
+
+    const end = performance.now();
+    setTiempoUsuarios((end - start) / 1000);
+    setRunning(false);
+  };
+
+  // 🔹 Simular pedidos concurrentes
+  const simulatePedidos = async () => {
+    const pedidos = parseInt(numPedidos);
+    const concurrencia = parseInt(concurrency);
+
+    if (!pedidos || !concurrencia || pedidos <= 0 || concurrencia <= 0) {
+      alert("Ingrese valores válidos");
+      return;
+    }
+
+    setRunning(true);
+    setSuccessCount(0);
+    setErrorCount(0);
+    setTiempoPedidos(0);
+    setLabelsPedidos([]);
+    setChartPedidos([]);
+
+    const tasks = Array.from({ length: pedidos }, (_, i) => async () => {
+      try {
+        await fakePurchase({ orderId: i + 1 });
+        setSuccessCount((prev) => prev + 1);
+        setLabelsPedidos((prev) => [...prev, `OK #${i + 1}`]);
+        setChartPedidos((prev) => [...prev, 1]);
+      } catch {
+        setErrorCount((prev) => prev + 1);
+        setLabelsPedidos((prev) => [...prev, `Error #${i + 1}`]);
+        setChartPedidos((prev) => [...prev, 0]);
+      }
+    });
+
+    const start = performance.now();
+    await runWithConcurrency(tasks, concurrencia);
+    const end = performance.now();
+
+    setTiempoPedidos((end - start) / 1000);
+    setRunning(false);
+  };
+
+  // Datos gráficos
+  const dataUsuarios = {
+    labels: labelsUsuarios,
+    datasets: [
+      {
+        label: "Usuarios creados (1=Éxito, 0=Error)",
+        data: chartUsuarios,
+        backgroundColor: chartUsuarios.map((v) => (v === 1 ? "green" : "red")),
+      },
+    ],
+  };
+
+  const dataPedidos = {
+    labels: labelsPedidos,
+    datasets: [
+      {
+        label: "Pedidos procesados (1=Éxito, 0=Error)",
+        data: chartPedidos,
+        backgroundColor: chartPedidos.map((v) => (v === 1 ? "green" : "red")),
+      },
+    ],
+  };
 
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", padding: "30px", maxWidth: "1000px", margin: "0 auto" }}>
-      <h1 style={{ textAlign: "center", color: "#2c3e50" }}>🛒 Tienda de Electrónicos – Simulación de Sobrecarga</h1>
+    <div className="container">
+      <header className="header">
+  <h1>🚀 Simulación de Sobrecarga</h1>
+  <p>Proyecto de clase</p>
+  <div className="modes">
+    <div className="mode-card">
+      <h3>👥 Usuarios masivos</h3>
+      <p>Simula la creación de miles de usuarios al mismo tiempo.</p>
+    </div>
+    <div className="mode-card">
+      <h3>📦 Pedidos concurrentes</h3>
+      <p>Procesa pedidos en paralelo con latencia, errores y balanceo.</p>
+    </div>
+  </div>
+</header>
 
-      {/* Catálogo */}
-      <h2 style={{ marginTop: "30px" }}>Catálogo de Productos</h2>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "15px", marginBottom: "30px" }}>
-        {productos.map(p => (
-          <div key={p.id} style={{ border: "1px solid #ddd", borderRadius: "8px", padding: "15px", background: "#f9f9f9" }}>
-            <h3 style={{ margin: "0 0 10px 0", color: "#2980b9" }}>{p.name}</h3>
-            <p style={{ margin: 0 }}>
-              Precio: <b>{p.price.toLocaleString("es-CO", { style: "currency", currency: "COP" })}</b>
-            </p>
-          </div>
-        ))}
+
+      {/* Selector de modo */}
+      <div style={{ margin: "20px" }}>
+        <button onClick={() => setMode("usuarios")}>Simular Usuarios</button>
+        <button onClick={() => setMode("pedidos")} style={{ marginLeft: "10px" }}>
+          Simular Pedidos
+        </button>
       </div>
 
-      {/* Configuración */}
-      <h2>Configuración de la Simulación</h2>
-      <div style={{ display: "flex", gap: "20px", marginBottom: "20px" }}>
-        <label>
-          Pedidos a simular:
+      {/* Modo Usuarios */}
+      {mode === "usuarios" && (
+        <div className="card">
+          <h2>Simulación de Usuarios Masivos</h2>
           <input
-            type="number"
-            value={pedidosCount}
-            onChange={e => setPedidosCount(parseInt(e.target.value || "0"))}
-            style={{ marginLeft: "10px", padding: "5px" }}
+            type="text"
+            value={cantidad}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (/^\d*$/.test(val)) {
+                setCantidad(val.replace(/^0+(?=\d)/, ""));
+              }
+            }}
+            placeholder="Cantidad de usuarios (Ej: 20000)"
           />
-        </label>
+          <button onClick={simulateUsers} disabled={running}>
+            {running ? "Simulando..." : "Iniciar Simulación"}
+          </button>
 
-        <label>
-          Concurrencia:
+          {(usuarios + errorUsuarios) > 0 && (
+            <div className="results">
+              <h3>Resultados</h3>
+              <p>✅ Éxitos: <b>{usuarios}</b></p>
+              <p>❌ Errores: <b>{errorUsuarios}</b></p>
+              <p>⏱ Tiempo total: <b>{tiempoUsuarios.toFixed(2)} segundos</b></p>
+            </div>
+          )}
+
+          {labelsUsuarios.length > 0 && (
+            <div className="chart">
+              <Bar data={dataUsuarios} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modo Pedidos */}
+      {mode === "pedidos" && (
+        <div className="card">
+          <h2>Simulación de Pedidos Concurrentes</h2>
           <input
-            type="number"
-            value={concurrencia}
-            onChange={e => setConcurrencia(parseInt(e.target.value || "1"))}
-            style={{ marginLeft: "10px", padding: "5px" }}
+            type="text"
+            value={numPedidos}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (/^\d*$/.test(val)) {
+                setNumPedidos(val.replace(/^0+(?=\d)/, ""));
+              }
+            }}
+            placeholder="Cantidad de pedidos (Ej: 100)"
           />
-        </label>
-      </div>
+          <input
+            type="text"
+            value={concurrency}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (/^\d*$/.test(val)) {
+                setConcurrency(val.replace(/^0+(?=\d)/, ""));
+              }
+            }}
+            placeholder="Concurrencia (Ej: 10)"
+          />
+          <button onClick={simulatePedidos} disabled={running}>
+            {running ? "Simulando..." : "Iniciar Simulación"}
+          </button>
 
-      {/* Botón */}
-      <button
-        onClick={run}
-        disabled={procesando}
-        style={{
-          padding: "12px 20px",
-          backgroundColor: procesando ? "#95a5a6" : "#27ae60",
-          color: "#fff",
-          border: "none",
-          borderRadius: "6px",
-          cursor: procesando ? "not-allowed" : "pointer",
-          fontWeight: "bold",
-          marginBottom: "30px"
-        }}
-      >
-        {procesando ? "Procesando compras..." : "Simular Compras Masivas"}
-      </button>
+          {(successCount + errorCount) > 0 && (
+            <div className="results">
+              <h3>Resultados</h3>
+              <p>✅ Éxitos: <b>{successCount}</b></p>
+              <p>❌ Errores: <b>{errorCount}</b></p>
+              <p>⏱ Tiempo total: <b>{tiempoPedidos.toFixed(2)} segundos</b></p>
+            </div>
+          )}
 
-      {/* Resultados */}
-      <h2>Resultados</h2>
-      <ul style={{ lineHeight: "1.8" }}>
-        <li>✅ Pedidos procesados: <b>{pedidos.length}</b></li>
-        <li>❌ Errores: <b>{errores}</b></li>
-        <li>⏱️ Tiempo total: <b>{duracionMs ? duracionMs + " ms" : "-"}</b></li>
-        <li>⚡ Throughput: <b>{throughput} pedidos/seg</b></li>
-      </ul>
+          {labelsPedidos.length > 0 && (
+            <div className="chart">
+              <Bar data={dataPedidos} />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
+export default App;
