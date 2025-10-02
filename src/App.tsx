@@ -5,7 +5,7 @@ import { runWithConcurrency, fakePurchase } from "./simulate";
 import { fakeUser } from "./simulateUsers";
 
 
-// Chart.js
+
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -30,7 +30,7 @@ function App() {
   const [labelsUsuarios, setLabelsUsuarios] = useState<string[]>([]);
   const [chartUsuarios, setChartUsuarios] = useState<number[]>([]);
 
-  // --- Estado pedidos ---
+  
   const [numPedidos, setNumPedidos] = useState<string>("");
   const [concurrency, setConcurrency] = useState<string>("");
   const [successCount, setSuccessCount] = useState(0);
@@ -41,7 +41,7 @@ function App() {
 
   const [running, setRunning] = useState(false);
 
-  // 🔹 Simular usuarios masivos
+
   const simulateUsers = async () => {
     const total = parseInt(cantidad);
     if (!total || total <= 0) {
@@ -70,7 +70,7 @@ function App() {
         setChartUsuarios((prev) => [...prev, 0]);
       }
 
-      // micro pausa cada cierto número para simular progresión
+      
       if (i % 200 === 0) {
         await new Promise((res) => setTimeout(res, 1));
       }
@@ -87,7 +87,7 @@ function App() {
     const concurrencia = parseInt(concurrency);
 
     if (!pedidos || !concurrencia || pedidos <= 0 || concurrencia <= 0) {
-      alert("Ingrese valores válidos");
+      alert("Ingrese un valor que sea válido");
       return;
     }
 
